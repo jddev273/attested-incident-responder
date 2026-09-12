@@ -1,5 +1,7 @@
 # AIR — Attested Incident Responder
 
+<img src="air-logo.png" alt="AIR" width="72" height="72">
+
 Proven incident. Money stops. Proven recovery. Money moves again.
 
 AIR turns verified reserve distress on Ethereum into an enforceable spending restriction on Creditcoin. A recommender may only tighten containment. Recovery needs a later, separate proof. The model never gets custody.

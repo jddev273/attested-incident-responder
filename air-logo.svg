@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480" role="img" aria-label="AIR">
+  <rect width="480" height="480" fill="#000000"/>
+  <text x="240" y="258" text-anchor="middle" dominant-baseline="middle"
+        font-family="Liberation Mono, DejaVu Sans Mono, ui-monospace, monospace"
+        font-weight="700" font-size="168" fill="#ffffff">AIR</text>
+</svg>
