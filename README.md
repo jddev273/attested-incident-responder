@@ -45,11 +45,14 @@ Creditcoin payments succeed, stop, or resume with the policy
 | Creditcoin CC3 | Sentry vault | `0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc` |
 | Creditcoin CC3 | AIR responder | `0xD3B5C411C69708256291b678BFf0C7Fc5Ec1ec4F` |
 
-Same payment class on Creditcoin CC3:
+Same incident on Creditcoin CC3 (`0x5432…a67e`):
 
-- Baseline success: [`0xba66…b811`](https://creditcoin-testnet.blockscout.com/tx/0xba66fbf831af4000e112ea2332939d37062728d259a6daf7348e930fd275b811)
-- FROZEN revert (status 0): [`0x752f…548c`](https://creditcoin-testnet.blockscout.com/tx/0x752f9297ecd39f07235d67baad69375796a53ae158f8d2b90bc11af8a63f548c)
-- After proved recovery: [`0x3e7c…b046`](https://creditcoin-testnet.blockscout.com/tx/0x3e7cc159a42483a0b1545f41d3bf0fd00c2d08f0e3e128190ee89ce153a2b046)
+- Baseline payment: [`0xba66…b811`](https://creditcoin-testnet.blockscout.com/tx/0xba66fbf831af4000e112ea2332939d37062728d259a6daf7348e930fd275b811)
+- ContainmentApplied (LIMITED): [`0xce08…f70c`](https://creditcoin-testnet.blockscout.com/tx/0xce08a0fb412dc8b473868f28339272097024f8f60d54add593831ea57133f70c)
+- RecommendationStrengthened (FROZEN): [`0xa321…ef84`](https://creditcoin-testnet.blockscout.com/tx/0xa321ca0f38fb659974686cab3b23e9a93d957b3c31d12965cb3aee3107eeef84)
+- FROZEN revert `PaymentsFrozen()`: [`0x752f…548c`](https://creditcoin-testnet.blockscout.com/tx/0x752f9297ecd39f07235d67baad69375796a53ae158f8d2b90bc11af8a63f548c)
+- RecoveryApplied (NORMAL): [`0x6b3c…5ec6`](https://creditcoin-testnet.blockscout.com/tx/0x6b3ccee9bcc6a55acc30ca647b39a9806e8f8b993167343f1726dbf88ef85ec6)
+- Restored payment: [`0x3e7c…b046`](https://creditcoin-testnet.blockscout.com/tx/0x3e7cc159a42483a0b1545f41d3bf0fd00c2d08f0e3e128190ee89ce153a2b046)
 
 ## Repo
 
