@@ -4,7 +4,7 @@ Proven incident. Money stops. Proven recovery. Money moves again.
 
 AIR turns verified reserve distress on Ethereum into an enforceable spending restriction on Creditcoin. A recommender may only tighten containment. Recovery needs a later, separate proof. The model never gets custody.
 
-Product page: [`demo/index.html`](demo/index.html)
+Product page: [https://jddev273.github.io/attested-incident-responder/](https://jddev273.github.io/attested-incident-responder/)
 
 ## Why it exists
 
@@ -55,6 +55,7 @@ Same payment class on Creditcoin CC3:
 
 | Path | Role |
 | --- | --- |
+| `index.html` | Product page (GitHub Pages) |
 | `src/AttestedIncidentResponder.sol` | Source emitter, responder, and `SentryVault` |
 | `agent/air_recommender.py` | Bounded recommender (tighten only) |
 | `test/` | Containment, strengthening, and recovery invariants |
