@@ -12,7 +12,7 @@ A reserve can deteriorate on one chain while treasury spend authority on another
 
 **What you get**
 
-- **Cross-chain policy that actually binds funds.** Finalized Ethereum evidence can change what a Creditcoin vault is allowed to pay.
+- **Attaches to existing spend paths.** The responder drives `IAirContainmentTarget`. `SentryVault`, a Safe Guard, and `PauseTarget` are three sinks for the same policy.
 - **Economic proof, not a simulated UI.** The same payment class succeeds, then reverts (status 0) while frozen, then succeeds again after verified recovery.
 - **AI that is useful without being sovereign.** The model may recommend stricter containment. It cannot sign, pick destinations, weaken the floor, invent proof, or authorize recovery.
 - **Fail-closed judgment.** If the model is offline, malformed, or asks for a weaker mode, deterministic policy still holds.
@@ -57,10 +57,20 @@ Same payment class on Creditcoin CC3:
 | --- | --- |
 | `index.html` | Product page (GitHub Pages) |
 | `src/AttestedIncidentResponder.sol` | Source emitter, responder, and `SentryVault` |
+| `src/AirSafeGuard.sol` | Safe Guard containment target (`IAirContainmentTarget`) |
+| `src/PauseTarget.sol` | Second containment target (pause / quota) |
 | `agent/air_recommender.py` | Bounded recommender (tighten only) |
-| `test/` | Containment, strengthening, and recovery invariants |
+| `agent/air_signer.py` | EIP-712 signer for the 224-byte recommendation payload |
+| `scripts/judge-demo.sh` | One-command local tests plus public receipt check |
+| `test/` | Containment, Safe Guard, strengthening, and recovery invariants |
 | `scripts/live_chaininfo.py` | Live Creditcoin ChainInfo read |
 | `vendor/asc-contracts-0.2.1/` | Gluwa ASC proof verifier used at compile time |
+
+```bash
+./scripts/judge-demo.sh
+```
+
+Or separately:
 
 ```bash
 forge test -q

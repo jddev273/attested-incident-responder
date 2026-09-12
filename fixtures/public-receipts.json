@@ -1,0 +1,17 @@
+[
+  {
+    "name": "baseline payment succeeds",
+    "tx": "0xba66fbf831af4000e112ea2332939d37062728d259a6daf7348e930fd275b811",
+    "status": "1"
+  },
+  {
+    "name": "frozen payment rejected",
+    "tx": "0x752f9297ecd39f07235d67baad69375796a53ae158f8d2b90bc11af8a63f548c",
+    "status": "0"
+  },
+  {
+    "name": "recovered payment succeeds",
+    "tx": "0x3e7cc159a42483a0b1545f41d3bf0fd00c2d08f0e3e128190ee89ce153a2b046",
+    "status": "1"
+  }
+]
