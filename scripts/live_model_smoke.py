@@ -31,11 +31,13 @@ def main() -> int:
         warning_floor=200,
         critical_floor=100,
     )
+    token_env = os.environ.get("AIR_MODEL_MAX_TOKENS", "").strip()
     client = OpenAICompatibleClient(
         os.environ.get("AIR_MODEL_BASE_URL", "https://api.openai.com/v1"),
         key,
         os.environ.get("AIR_MODEL", "gpt-5-mini"),
         timeout_seconds=float(os.environ.get("AIR_MODEL_TIMEOUT", "20")),
+        max_completion_tokens=int(token_env) if token_env else None,
         reasoning_effort=os.environ.get("AIR_MODEL_REASONING_EFFORT", "low"),
     )
     raw = client.complete(evidence)

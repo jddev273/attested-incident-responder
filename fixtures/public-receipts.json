@@ -19,7 +19,9 @@
       "kind": "policy",
       "status": "ok",
       "to": "responder",
-      "require_incident_topic": true
+      "event": "ContainmentApplied",
+      "mode_word": 1,
+      "expected_mode": 1
     },
     {
       "name": "authenticated strengthening",
@@ -27,7 +29,9 @@
       "kind": "policy",
       "status": "ok",
       "to": "responder",
-      "require_incident_topic": true
+      "event": "RecommendationStrengthened",
+      "mode_word": 0,
+      "expected_mode": 2
     },
     {
       "name": "frozen payment rejected",
@@ -43,7 +47,9 @@
       "kind": "policy",
       "status": "ok",
       "to": "responder",
-      "require_incident_topic": true
+      "event": "RecoveryApplied",
+      "mode_word": 0,
+      "expected_mode": 0
     },
     {
       "name": "recovered payment succeeds",
