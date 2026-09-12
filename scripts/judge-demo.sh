@@ -15,6 +15,7 @@ python3 scripts/air_scenarios.py
 
 echo "[PASS] checking public Creditcoin receipts"
 python3 scripts/check_public_receipts.py
+python3 scripts/live_model_smoke.py
 
 echo
 echo "AIR lifecycle: source policy -> destination containment -> payment stop -> proved recovery -> payment resume"

@@ -2,7 +2,8 @@ import json
 import unittest
 
 from air_recommender import (
-    MAX_COMPLETION_TOKENS,
+    MAX_GPT5_COMPLETION_TOKENS,
+    MAX_LEGACY_COMPLETION_TOKENS,
     MAX_RESPONSE_BYTES,
     MAX_TIMEOUT_SECONDS,
     OpenAICompatibleClient,
@@ -209,7 +210,7 @@ class AirRecommenderTest(unittest.TestCase):
     def test_openai_compatible_client_sends_only_bounded_evidence_and_schema(self):
         captured = {}
         content = model_json()
-        payload = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+        payload = json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]}).encode()
         response = FakeResponse(payload)
 
         def fake_urlopen(request, timeout):
@@ -231,12 +232,15 @@ class AirRecommenderTest(unittest.TestCase):
         self.assertEqual(captured["timeout"], 3.5)
         self.assertNotIn("temperature", captured["body"])
         self.assertNotIn("max_tokens", captured["body"])
-        self.assertEqual(captured["body"]["max_completion_tokens"], MAX_COMPLETION_TOKENS)
+        self.assertEqual(captured["body"]["max_completion_tokens"], MAX_GPT5_COMPLETION_TOKENS)
+        self.assertEqual(captured["body"]["reasoning_effort"], "low")
         self.assertEqual(captured["body"]["response_format"], {"type": "json_object"})
         self.assertEqual(response.read_sizes, [MAX_RESPONSE_BYTES + 1])
         user = json.loads(captured["body"]["messages"][1]["content"])
-        self.assertEqual(user["policy_floor"], "LIMITED")
-        self.assertEqual(user["observation"], "raise")
+        self.assertEqual(user["verified_evidence"]["policy_floor"], "LIMITED")
+        self.assertEqual(user["verified_evidence"]["provenance"], "source_tx_fields_bound_by_on_chain_fingerprint")
+        self.assertEqual(user["supplemental_context"]["observation"], "raise")
+        self.assertEqual(user["supplemental_context"]["provenance"], "operator_supplied_not_in_fingerprint")
         self.assertNotIn("beneficiary", user)
         self.assertNotIn("calldata", user)
         self.assertNotIn("limit", user)
@@ -244,7 +248,7 @@ class AirRecommenderTest(unittest.TestCase):
     def test_legacy_chat_models_still_send_temperature_zero(self):
         captured = {}
         content = model_json()
-        payload = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+        payload = json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]}).encode()
 
         def fake_urlopen(request, timeout):
             captured["body"] = json.loads(request.data.decode())
@@ -259,7 +263,7 @@ class AirRecommenderTest(unittest.TestCase):
         )
         self.assertEqual(client.complete(evidence()), content)
         self.assertEqual(captured["body"]["temperature"], 0)
-        self.assertEqual(captured["body"]["max_tokens"], MAX_COMPLETION_TOKENS)
+        self.assertEqual(captured["body"]["max_tokens"], MAX_LEGACY_COMPLETION_TOKENS)
         self.assertNotIn("max_completion_tokens", captured["body"])
 
     def test_openai_compatible_client_rejects_unbounded_timeout_values(self):
@@ -289,6 +293,83 @@ class AirRecommenderTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bounded byte limit"):
             client.complete(evidence())
         self.assertEqual(response.read_sizes, [MAX_RESPONSE_BYTES + 1])
+
+    def test_truncated_gpt5_output_is_a_distinct_fallback(self):
+        payload = json.dumps({"choices": [{"message": {"content": "{"}, "finish_reason": "length"}]}).encode()
+
+        def fake_urlopen(_request, timeout):
+            return FakeResponse(payload)
+
+        client = OpenAICompatibleClient(
+            "https://model.invalid/v1",
+            "secret",
+            "gpt-5-mini",
+            timeout_seconds=3.5,
+            urlopen=fake_urlopen,
+        )
+        result = recommend(evidence(), client)
+        self.assertTrue(result.fallback)
+        self.assertEqual(result.cause, "truncated_output")
+        self.assertEqual(result.mode, "LIMITED")
+
+    def test_supplemental_balance_context_is_validated_and_labeled(self):
+        with self.assertRaisesRegex(ValueError, "warning_floor"):
+            VerifiedIncidentEvidence(
+                evidence_id=EVIDENCE_ID,
+                incident_id=INCIDENT_ID,
+                severity=1,
+                source_chain_key="sepolia",
+                source_contract=RESPONDER,
+                source_block=1,
+                tx_index=0,
+                warning_floor=100,
+                critical_floor=100,
+            ).validate()
+        captured = {}
+        content = model_json()
+        payload = json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]}).encode()
+
+        def fake_urlopen(request, timeout):
+            captured["body"] = json.loads(request.data.decode())
+            return FakeResponse(payload)
+
+        thin_ev = VerifiedIncidentEvidence(
+            evidence_id=EVIDENCE_ID,
+            incident_id=INCIDENT_ID,
+            severity=1,
+            source_chain_key="sepolia",
+            source_contract=RESPONDER,
+            source_block=1,
+            tx_index=0,
+            observation="escalate",
+            protected_balance=110,
+            warning_floor=200,
+            critical_floor=100,
+        )
+        roomy = VerifiedIncidentEvidence(
+            evidence_id=EVIDENCE_ID,
+            incident_id=INCIDENT_ID,
+            severity=1,
+            source_chain_key="sepolia",
+            source_contract=RESPONDER,
+            source_block=1,
+            tx_index=0,
+            observation="raise",
+            protected_balance=190,
+            warning_floor=200,
+            critical_floor=100,
+        )
+        client = OpenAICompatibleClient(
+            "https://model.invalid/v1", "secret", "gpt-5-mini", timeout_seconds=3.5, urlopen=fake_urlopen
+        )
+        client.complete(thin_ev)
+        thin_ctx = json.loads(captured["body"]["messages"][1]["content"])["supplemental_context"]
+        self.assertEqual(thin_ctx["buffer_to_critical"], 10)
+        self.assertEqual(thin_ctx["provenance"], "operator_supplied_not_in_fingerprint")
+        client.complete(roomy)
+        roomy_ctx = json.loads(captured["body"]["messages"][1]["content"])["supplemental_context"]
+        self.assertEqual(roomy_ctx["buffer_to_critical"], 90)
+        self.assertNotEqual(thin_ctx["buffer_to_critical"], roomy_ctx["buffer_to_critical"])
 
 
 if __name__ == "__main__":

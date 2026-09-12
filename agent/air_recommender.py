@@ -45,8 +45,11 @@ MODE_WORD = {"NORMAL": 0, "LIMITED": 1, "FROZEN": 2}
 MAX_UINT64 = (1 << 64) - 1
 MAX_REASON_CHARS = 280
 MAX_RESPONSE_BYTES = 16_384
-MAX_COMPLETION_TOKENS = 180
+MAX_LEGACY_COMPLETION_TOKENS = 180
+MAX_GPT5_COMPLETION_TOKENS = 4096
+MAX_COMPLETION_TOKENS = MAX_GPT5_COMPLETION_TOKENS
 MAX_TIMEOUT_SECONDS = 30.0
+ALLOWED_REASONING_EFFORT = ("low", "medium", "high")
 
 
 def _rotl64(value: int, amount: int) -> int:
@@ -152,6 +155,21 @@ class VerifiedIncidentEvidence:
             raise ValueError("source position must be non-negative")
         if self.observation not in ("raise", "refresh", "escalate"):
             raise ValueError("observation must be raise, refresh, or escalate")
+        for label, value in (
+            ("protected_balance", self.protected_balance),
+            ("warning_floor", self.warning_floor),
+            ("critical_floor", self.critical_floor),
+        ):
+            if value is not None and value < 0:
+                raise ValueError(f"{label} must be non-negative")
+        if self.warning_floor is not None and self.critical_floor is not None:
+            if self.warning_floor <= self.critical_floor:
+                raise ValueError("warning_floor must be greater than critical_floor")
+        if self.protected_balance is not None and self.critical_floor is not None and self.warning_floor is not None:
+            if self.severity == 1 and not (self.critical_floor < self.protected_balance <= self.warning_floor):
+                raise ValueError("WARNING balance must sit between critical and warning floors")
+            if self.severity == 2 and self.protected_balance > self.critical_floor:
+                raise ValueError("CRITICAL balance must be at or below the critical floor")
 
     @property
     def allowed_modes(self) -> tuple[str, ...]:
@@ -179,16 +197,25 @@ class OpenAICompatibleClient:
         api_key: str,
         model: str,
         timeout_seconds: float = 8.0,
+        max_completion_tokens: int | None = None,
+        reasoning_effort: str = "low",
         urlopen: Callable[..., Any] = urllib.request.urlopen,
     ) -> None:
         if not base_url or not model:
             raise ValueError("base_url and model are required")
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > MAX_TIMEOUT_SECONDS:
             raise ValueError(f"timeout_seconds must be finite and in (0, {MAX_TIMEOUT_SECONDS}]")
+        if reasoning_effort not in ALLOWED_REASONING_EFFORT:
+            raise ValueError("reasoning_effort must be low, medium, or high")
         self.endpoint = base_url.rstrip("/") + "/chat/completions"
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.reasoning_effort = reasoning_effort
+        default_tokens = MAX_GPT5_COMPLETION_TOKENS if model.lower().startswith("gpt-5") else MAX_LEGACY_COMPLETION_TOKENS
+        self.max_completion_tokens = default_tokens if max_completion_tokens is None else max_completion_tokens
+        if self.max_completion_tokens <= 0 or self.max_completion_tokens > 32_768:
+            raise ValueError("max_completion_tokens is out of range")
         self._urlopen = urlopen
 
     def _chat_body(self, system: str, user_payload: dict[str, Any]) -> dict[str, Any]:
@@ -202,10 +229,11 @@ class OpenAICompatibleClient:
         }
         # GPT-5 chat models reject temperature and max_tokens; older compatible models still use them.
         if self.model.lower().startswith("gpt-5"):
-            body["max_completion_tokens"] = MAX_COMPLETION_TOKENS
+            body["max_completion_tokens"] = self.max_completion_tokens
+            body["reasoning_effort"] = self.reasoning_effort
         else:
             body["temperature"] = 0
-            body["max_tokens"] = MAX_COMPLETION_TOKENS
+            body["max_tokens"] = self.max_completion_tokens
         return body
 
     def complete(self, evidence: VerifiedIncidentEvidence) -> str:
@@ -219,25 +247,32 @@ class OpenAICompatibleClient:
             "You have NO authority to name beneficiaries, contracts, calldata, limits, policies, or recovery actions."
         )
         user_payload = {
-            "evidence_id": evidence.evidence_id,
-            "incident_id": evidence.incident_id,
-            "severity": evidence.severity,
-            "policy_floor": source_floor(evidence),
-            "observation": evidence.observation,
-            "source_chain_key": evidence.source_chain_key,
-            "source_contract": evidence.source_contract,
-            "source_block": evidence.source_block,
-            "tx_index": evidence.tx_index,
-            "allowed_modes": list(evidence.allowed_modes),
+            "verified_evidence": {
+                "provenance": "source_tx_fields_bound_by_on_chain_fingerprint",
+                "evidence_id": evidence.evidence_id,
+                "incident_id": evidence.incident_id,
+                "severity": evidence.severity,
+                "policy_floor": source_floor(evidence),
+                "source_chain_key": evidence.source_chain_key,
+                "source_contract": evidence.source_contract,
+                "source_block": evidence.source_block,
+                "tx_index": evidence.tx_index,
+                "allowed_modes": list(evidence.allowed_modes),
+            },
+            "supplemental_context": {
+                "provenance": "operator_supplied_not_in_fingerprint",
+                "observation": evidence.observation,
+            },
         }
+        extra = user_payload["supplemental_context"]
         if evidence.protected_balance is not None:
-            user_payload["protected_balance"] = evidence.protected_balance
+            extra["protected_balance"] = evidence.protected_balance
         if evidence.warning_floor is not None:
-            user_payload["warning_floor"] = evidence.warning_floor
+            extra["warning_floor"] = evidence.warning_floor
         if evidence.critical_floor is not None:
-            user_payload["critical_floor"] = evidence.critical_floor
+            extra["critical_floor"] = evidence.critical_floor
             if evidence.protected_balance is not None:
-                user_payload["buffer_to_critical"] = evidence.protected_balance - evidence.critical_floor
+                extra["buffer_to_critical"] = evidence.protected_balance - evidence.critical_floor
         body = json.dumps(self._chat_body(system, user_payload), separators=(",", ":")).encode()
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -248,7 +283,10 @@ class OpenAICompatibleClient:
         if len(raw_response) > MAX_RESPONSE_BYTES:
             raise ValueError("model response exceeds bounded byte limit")
         parsed = json.loads(raw_response.decode("utf-8"))
-        content = parsed["choices"][0]["message"]["content"]
+        choice = parsed["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise ValueError("model output truncated")
+        content = choice["message"]["content"]
         if not isinstance(content, str):
             raise ValueError("model content must be text")
         return content
@@ -394,6 +432,18 @@ def recommend(evidence: VerifiedIncidentEvidence, client: Any) -> Recommendation
             f"model adapter timeout ({type(exc).__name__}); contract applies objective source-severity floor",
             "provider_timeout",
         )
+    except ValueError as exc:
+        if "truncated" in str(exc):
+            return _fallback(
+                evidence,
+                "model output truncated before a complete JSON decision; contract applies objective source-severity floor",
+                "truncated_output",
+            )
+        return _fallback(
+            evidence,
+            f"model adapter failure ({type(exc).__name__}); contract applies objective source-severity floor",
+            "provider_error",
+        )
     except Exception as exc:  # network/provider failure must never block containment
         return _fallback(
             evidence,
@@ -437,7 +487,9 @@ def main(argv: list[str] | None = None) -> int:
         base_url=os.environ.get("AIR_MODEL_BASE_URL", "https://api.openai.com/v1"),
         api_key=os.environ.get("AIR_MODEL_API_KEY", ""),
         model=os.environ.get("AIR_MODEL", "gpt-5-mini"),
-        timeout_seconds=float(os.environ.get("AIR_MODEL_TIMEOUT", "8")),
+        timeout_seconds=float(os.environ.get("AIR_MODEL_TIMEOUT", "20")),
+        max_completion_tokens=int(os.environ.get("AIR_MODEL_MAX_TOKENS", "0")) or None,
+        reasoning_effort=os.environ.get("AIR_MODEL_REASONING_EFFORT", "low"),
     )
     result = recommend(evidence, client)
     print(json.dumps(asdict(result), sort_keys=True, separators=(",", ":")))

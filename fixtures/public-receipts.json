@@ -1,30 +1,56 @@
-[
-  {
-    "name": "baseline payment succeeds",
-    "tx": "0xba66fbf831af4000e112ea2332939d37062728d259a6daf7348e930fd275b811",
-    "status": "ok",
-    "method": "0xef0bba2c",
-    "to": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
-    "from": "0x748E51C193A756c713226aeCF874148863515272",
-    "min_block": 5437585
-  },
-  {
-    "name": "frozen payment rejected",
-    "tx": "0x752f9297ecd39f07235d67baad69375796a53ae158f8d2b90bc11af8a63f548c",
-    "status": "error",
-    "method": "0xef0bba2c",
-    "to": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
-    "from": "0x748E51C193A756c713226aeCF874148863515272",
-    "revert_selector": "0xd5d5c0c9",
-    "min_block": 5438040
-  },
-  {
-    "name": "recovered payment succeeds",
-    "tx": "0x3e7cc159a42483a0b1545f41d3bf0fd00c2d08f0e3e128190ee89ce153a2b046",
-    "status": "ok",
-    "method": "0xef0bba2c",
-    "to": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
-    "from": "0x748E51C193A756c713226aeCF874148863515272",
-    "min_block": 5438072
-  }
-]
+{
+  "incident_id": "0x5432583eae2c2990e88eecfdf491afde5c1589669bf5f2d456452a525c64a67e",
+  "vault": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
+  "responder": "0xD3B5C411C69708256291b678BFf0C7Fc5Ec1ec4F",
+  "operator": "0x748E51C193A756c713226aeCF874148863515272",
+  "execute_payment_selector": "0xef0bba2c",
+  "payments_frozen_selector": "0xd5d5c0c9",
+  "steps": [
+    {
+      "name": "baseline payment succeeds",
+      "tx": "0xba66fbf831af4000e112ea2332939d37062728d259a6daf7348e930fd275b811",
+      "kind": "payment",
+      "status": "ok",
+      "to": "vault"
+    },
+    {
+      "name": "incident containment applied",
+      "tx": "0xce08a0fb412dc8b473868f28339272097024f8f60d54add593831ea57133f70c",
+      "kind": "policy",
+      "status": "ok",
+      "to": "responder",
+      "require_incident_topic": true
+    },
+    {
+      "name": "authenticated strengthening",
+      "tx": "0xa321ca0f38fb659974686cab3b23e9a93d957b3c31d12965cb3aee3107eeef84",
+      "kind": "policy",
+      "status": "ok",
+      "to": "responder",
+      "require_incident_topic": true
+    },
+    {
+      "name": "frozen payment rejected",
+      "tx": "0x752f9297ecd39f07235d67baad69375796a53ae158f8d2b90bc11af8a63f548c",
+      "kind": "payment",
+      "status": "error",
+      "to": "vault",
+      "revert_selector": "0xd5d5c0c9"
+    },
+    {
+      "name": "verified recovery applied",
+      "tx": "0x6b3ccee9bcc6a55acc30ca647b39a9806e8f8b993167343f1726dbf88ef85ec6",
+      "kind": "policy",
+      "status": "ok",
+      "to": "responder",
+      "require_incident_topic": true
+    },
+    {
+      "name": "recovered payment succeeds",
+      "tx": "0x3e7cc159a42483a0b1545f41d3bf0fd00c2d08f0e3e128190ee89ce153a2b046",
+      "kind": "payment",
+      "status": "ok",
+      "to": "vault"
+    }
+  ]
+}
