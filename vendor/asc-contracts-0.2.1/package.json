@@ -1,0 +1,47 @@
+{
+  "name": "@gluwa/asc-contracts",
+  "version": "0.2.1",
+  "description": "Solidity contracts and libraries for the ASC (Attestcoin Smart Contracts) ecosystem on the Gluwa Creditcoin Network. Distributed as source for consumption by Foundry/forge.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gluwa/asc-contracts"
+  },
+  "files": [
+    "contracts/write-ability/**/*.sol",
+    "contracts/common/**/*.sol",
+    "contracts/readability/**/*.sol"
+  ],
+  "scripts": {
+    "test": "hardhat test",
+    "coverage": "hardhat coverage",
+    "coverage:check": "istanbul check-coverage ./coverage.json --statements 70 --branches 50 --functions 70 --lines 65",
+    "format": "prettier --write .",
+    "check-format": "prettier --check .",
+    "lint": "eslint -c .eslintrc.js --max-warnings 0 --ext .ts ./",
+    "lint:solidity": "solhint 'contracts/**/*.sol'",
+    "typecheck": "hardhat compile && tsc --noEmit",
+    "build:abi-package": "hardhat compile && ts-node scripts/build-abi-package.ts",
+    "deploy:write-ability": "hardhat run scripts/hardhat/deployWriteAbility.ts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "6.1.0",
+    "@types/mocha": "^10.0.10",
+    "@typescript-eslint/eslint-plugin": "8.59.0",
+    "@typescript-eslint/parser": "8.59.0",
+    "dotenv": "^17.4.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.8",
+    "hardhat": "^2.28.6",
+    "prettier": "3.8.1",
+    "solhint": "^6.2.3",
+    "solidity-coverage": "^0.8.14",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "5.9.2"
+  },
+  "author": "Gluwa Inc.",
+  "license": "MIT",
+  "dependencies": {
+    "@openzeppelin/contracts": "5.1.0"
+  }
+}
