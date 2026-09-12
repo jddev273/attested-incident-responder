@@ -114,18 +114,21 @@ contract SentryVault is IAirContainmentTarget {
 
 /// @notice Foreign-chain semantic anchor. A guardian may trigger evaluation but cannot choose severity:
 /// it is derived from the protected treasury's live source-chain balance and immutable thresholds.
+/// Same-severity raises are fresh observations of the current incident, not a second incident.
 contract SourceIncidentEmitter {
     address public immutable guardian;
     address public immutable protectedTreasury;
     uint256 public immutable warningFloor;
     uint256 public immutable criticalFloor;
     uint8 public lastRaisedSeverity;
+    bytes32 public lastRaisedIncidentId;
 
     error NotGuardian();
     error InvalidThresholds();
     error NoObjectiveIncident();
     error ObjectiveSeverityMismatch();
-    error SeverityNotEscalated();
+    error SeverityRegressed();
+    error ObservationIncidentMismatch();
     error RiskStillActive();
     event IncidentRaised(bytes32 indexed incidentId, bytes32 indexed deploymentId, uint8 severity, bytes32 policyHash);
     event IncidentResolved(bytes32 indexed incidentId, bytes32 indexed deploymentId, bytes32 policyHash);
@@ -152,8 +155,13 @@ contract SourceIncidentEmitter {
         uint8 objectiveSeverity = currentSeverity();
         if (objectiveSeverity == 0) revert NoObjectiveIncident();
         if (severity != objectiveSeverity) revert ObjectiveSeverityMismatch();
-        if (severity <= lastRaisedSeverity) revert SeverityNotEscalated();
-        lastRaisedSeverity = severity;
+        if (severity < lastRaisedSeverity) revert SeverityRegressed();
+        if (severity == lastRaisedSeverity) {
+            if (incidentId != lastRaisedIncidentId) revert ObservationIncidentMismatch();
+        } else {
+            lastRaisedSeverity = severity;
+            lastRaisedIncidentId = incidentId;
+        }
         emit IncidentRaised(incidentId, deploymentId, severity, policyHash);
     }
 
@@ -161,6 +169,7 @@ contract SourceIncidentEmitter {
         if (msg.sender != guardian) revert NotGuardian();
         if (currentSeverity() != 0) revert RiskStillActive();
         lastRaisedSeverity = 0;
+        lastRaisedIncidentId = bytes32(0);
         emit IncidentResolved(incidentId, deploymentId, policyHash);
     }
 }
@@ -237,6 +246,7 @@ contract AirResponderCore {
     error ResolutionNotCausal();
     error SourceAttestationUnavailable();
     error SourceEvidenceStale();
+    error ObservationNotCausal();
     error AuthenticatedStrengtheningRequired();
 
     event ProofAccepted(bytes32 indexed proofLocatorId, uint64 indexed sourceBlock, uint64 txIndex);
@@ -339,7 +349,14 @@ contract AirResponderCore {
         if (deploymentId != policy.deploymentId) revert WrongDeployment();
         if (sourcePolicyHash != policyHash) revert WrongPolicy();
         if (severity == 0 || severity > 2) revert InvalidSeverity();
-        if (incidentEverSeen[incidentId]) revert IncidentReplay();
+        ActiveIncident memory prior = incidents[incidentId];
+        if (prior.active) {
+            if (sourceBlock < prior.sourceBlock || (sourceBlock == prior.sourceBlock && txIndex <= prior.txIndex)) {
+                revert ObservationNotCausal();
+            }
+        } else if (incidentEverSeen[incidentId]) {
+            revert IncidentReplay();
+        }
 
         bytes32 fingerprint =
             keccak256(abi.encode(POLICY_DOMAIN, locatorId, incidentId, deploymentId, severity, sourcePolicyHash));
@@ -347,9 +364,20 @@ contract AirResponderCore {
         (appliedMode, fallbackUsed, rationaleHash) = _boundedRecommendation(aiRecommendation, fingerprint, severity);
 
         consumedProofLocator[locatorId] = true;
-        incidentEverSeen[incidentId] = true;
-        incidents[incidentId] = ActiveIncident(true, appliedMode, sourceBlock, txIndex, fingerprint);
-        _increment(appliedMode);
+        if (prior.active) {
+            if (uint8(appliedMode) < uint8(prior.mode)) {
+                appliedMode = prior.mode;
+            }
+            if (appliedMode != prior.mode) {
+                _decrement(prior.mode);
+                _increment(appliedMode);
+            }
+            incidents[incidentId] = ActiveIncident(true, appliedMode, sourceBlock, txIndex, fingerprint);
+        } else {
+            incidentEverSeen[incidentId] = true;
+            incidents[incidentId] = ActiveIncident(true, appliedMode, sourceBlock, txIndex, fingerprint);
+            _increment(appliedMode);
+        }
         Mode nextEffective = effectiveMode();
         // Target failure reverts all marks, so a valid proof cannot be burned by failed containment.
         target.applyMode(uint8(nextEffective));

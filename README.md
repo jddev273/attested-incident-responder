@@ -21,7 +21,7 @@ A reserve can deteriorate on one chain while treasury spend authority on another
 ## How it works
 
 1. **Source condition** — An objective protected-balance threshold on Ethereum defines WARNING vs CRITICAL. A guardian can trigger evaluation; they cannot invent severity.
-2. **Proof + freshness** — Creditcoin verifies the finalized source transaction and checks it against attested source height. Stale or future evidence fails closed.
+2. **Proof + freshness** — Creditcoin verifies the finalized source transaction and checks it against attested source height. A stale or future *transaction* is rejected without burning the incident. While risk remains, the source can emit a fresh observation of that same incident so a current proof can still land.
 3. **Policy floor** — Severity maps to a minimum vault mode: `NORMAL`, `LIMITED` (cumulative incident budget), or `FROZEN` (no outbound value).
 4. **Bounded strengthening** — For a warning, an authenticated equal-or-stricter recommendation may raise containment. Effective mode is `max(deterministic floor, bounded recommendation)`.
 5. **Creditcoin enforcement** — `SentryVault` is the spend path. There is no owner withdrawal that bypasses mode checks.

@@ -454,6 +454,54 @@ contract AirResponderTest {
         require(c.incidentEverSeen(boundaryId) && t.calls() == 1, "max-lag boundary did not contain");
     }
 
+    function testFreshCriticalObservationCanContainAfterUnrelayedProofGoesStale() public {
+        (AirResponderCore c, MockVerifier v, MockTarget t, MockChainInfo info) = _deployWithChainInfo();
+        bytes32 id = keccak256("critical-refresh");
+        info.setLatest(200, true);
+        _incidentTx(v, c, id, 2, 60, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        info.setLatest(301, true);
+        _expectIncidentRevert(c, 200, bytes("bad ai"));
+        require(!c.incidentEverSeen(id) && t.calls() == 0, "stale unrelayed critical mutated destination");
+
+        info.setLatest(200, true);
+        _incidentTx(v, c, id, 2, 61, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        c.processIncident(CHAIN_KEY, 190, _inc(), _cont(), bytes("bad ai"));
+        _eq(t.mode(), 2, "fresh critical observation did not freeze");
+        _eq(c.frozenCount(), 1, "fresh observation double-counted freeze");
+        require(c.incidentEverSeen(id), "fresh observation missed incident id");
+    }
+
+    function testSameIncidentCriticalObservationStrengthensWithoutASecondCount() public {
+        (AirResponderCore c, MockVerifier v, MockTarget t) = _deploy();
+        bytes32 id = keccak256("one-incident");
+        _incidentTx(v, c, id, 1, 62, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        c.processIncident(CHAIN_KEY, 150, _inc(), _cont(), bytes("bad ai"));
+        _eq(t.mode(), 1, "warning observation did not apply LIMITED");
+        _incidentTx(v, c, id, 2, 63, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        c.processIncident(CHAIN_KEY, 151, _inc(), _cont(), bytes("bad ai"));
+        _eq(t.mode(), 2, "same-id critical observation did not freeze");
+        _eq(c.limitedCount(), 0, "escalation left a LIMITED count");
+        _eq(c.frozenCount(), 1, "escalation counted a second incident");
+        _resolutionTx(v, c, id, 64, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        c.processResolution(CHAIN_KEY, 152, _inc(), _cont());
+        _eq(t.mode(), 0, "single logical incident needed two recoveries");
+    }
+
+    function testActiveIncidentRefreshCannotWeakenAndMustBeCausal() public {
+        (AirResponderCore c, MockVerifier v, MockTarget t) = _deploy();
+        bytes32 id = keccak256("no-weaken");
+        _incidentTx(v, c, id, 1, 65, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        c.processIncident(
+            CHAIN_KEY, 150, _inc(), _cont(), _recommend(c, id, 1, 150, 65, AirResponderCore.Mode.FROZEN)
+        );
+        _eq(t.mode(), 2, "signed warning did not freeze");
+        _incidentTx(v, c, id, 1, 66, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        _expectIncidentRevert(c, 149, bytes("bad ai"));
+        c.processIncident(CHAIN_KEY, 151, _inc(), _cont(), bytes("bad ai"));
+        _eq(t.mode(), 2, "later unsigned warning weakened freeze");
+        _eq(c.frozenCount(), 1, "refresh altered freeze occupancy");
+    }
+
     function testSourceEmitterDerivesSeverityFromTreasuryStateAndBlocksEarlyRecovery() public {
         SourceTreasury treasury = new SourceTreasury();
         PaymentSink sink = new PaymentSink();
@@ -476,6 +524,8 @@ contract AirResponderTest {
             );
         require(!inventedCritical, "guardian invented critical severity");
         emitter.raiseIncident(warningId, DEPLOY, 1, bytes32(uint256(1)));
+        emitter.raiseIncident(warningId, DEPLOY, 1, bytes32(uint256(1)));
+        require(emitter.lastRaisedIncidentId() == warningId, "refresh moved the logical incident");
         (bool duplicateWarning,) = address(emitter)
             .call(
                 abi.encodeWithSelector(
@@ -486,7 +536,7 @@ contract AirResponderTest {
                     bytes32(uint256(1))
                 )
             );
-        require(!duplicateWarning, "duplicate same-severity incident was accepted");
+        require(!duplicateWarning, "same-severity raise with a new incident id was accepted");
 
         treasury.pay(payable(address(sink)), 100 wei); // 75 => critical.
         require(emitter.currentSeverity() == 2, "critical threshold not derived");
