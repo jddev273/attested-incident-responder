@@ -13,9 +13,28 @@ interface VmGuard {
 }
 
 contract MockSafe {
-    function exec(AirSafeGuard guard, address to, uint256 value, bytes memory data, uint8 operation) external {
-        guard.checkTransaction(to, value, data, operation, 0, 0, 0, address(0), payable(address(0)), "", address(this));
+    function exec(
+        AirSafeGuard guard,
+        address to,
+        uint256 value,
+        bytes memory data,
+        uint8 operation,
+        uint256 gasPrice
+    ) external {
+        guard.checkTransaction(
+            to, value, data, operation, 0, 0, gasPrice, address(0), payable(address(0)), "", address(this)
+        );
         guard.checkAfterExecution(bytes32(0), true);
+    }
+
+    function execFailed(AirSafeGuard guard, address to, uint256 value) external {
+        guard.checkTransaction(to, value, bytes(""), 0, 0, 0, 0, address(0), payable(address(0)), "", address(this));
+        guard.checkAfterExecution(bytes32(0), false);
+    }
+
+    function execModule(AirSafeGuard guard, address to, uint256 value, bytes memory data, uint8 operation) external {
+        bytes32 hash_ = guard.checkModuleTransaction(to, value, data, operation, address(this));
+        guard.checkAfterModuleExecution(hash_, true);
     }
 }
 
@@ -33,19 +52,19 @@ contract AirSafeGuardTest {
         (AirResponderCore c, MockVerifier v) = _bind(guard);
         address to = address(0x1111);
 
-        safe.exec(guard, to, 0.01 ether, bytes(""), 0);
+        safe.exec(guard, to, 0.01 ether, bytes(""), 0, 0);
 
         bytes32 id = keccak256("safe-critical");
         _incidentTx(v, c, id, 2, 70, 120);
         c.processIncident(CHAIN_KEY, 120, _inc(), _cont(), bytes(""));
         require(uint8(guard.mode()) == 2, "AIR did not freeze the Safe guard");
-        (bool frozenOk,) = address(safe).call(abi.encodeWithSelector(safe.exec.selector, guard, to, 0.01 ether, bytes(""), uint8(0)));
+        (bool frozenOk,) = address(safe).call(abi.encodeWithSelector(safe.exec.selector, guard, to, 0.01 ether, bytes(""), uint8(0), uint256(0)));
         require(!frozenOk, "frozen Safe still executed");
 
         _resolutionTx(v, c, id, 71, 121);
         c.processResolution(CHAIN_KEY, 121, _inc(), _cont());
         require(uint8(guard.mode()) == 0, "recovery did not restore Safe");
-        safe.exec(guard, to, 0.01 ether, bytes(""), 0);
+        safe.exec(guard, to, 0.01 ether, bytes(""), 0, 0);
     }
 
     function testLimitedSafeSpendIsCappedAndDelegateCallIsRejected() public {
@@ -55,20 +74,58 @@ contract AirSafeGuardTest {
         bytes32 id = keccak256("safe-warning");
         _incidentTx(v, c, id, 1, 72, 130);
         c.processIncident(CHAIN_KEY, 130, _inc(), _cont(), bytes(""));
-        safe.exec(guard, address(0x1111), 0.01 ether, bytes(""), 0);
-        safe.exec(guard, address(0x1111), 0.01 ether, bytes(""), 0);
+        safe.exec(guard, address(0x1111), 0.01 ether, bytes(""), 0, 0);
+        safe.exec(guard, address(0x1111), 0.01 ether, bytes(""), 0, 0);
         (bool over,) = address(safe).call(
-            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(1), bytes(""), uint8(0))
+            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(1), bytes(""), uint8(0), uint256(0))
         );
         require(!over, "LIMITED Safe exceeded native budget");
         (bool delegated,) = address(safe).call(
-            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(0), bytes(""), uint8(1))
+            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(0), bytes(""), uint8(1), uint256(0))
         );
         require(!delegated, "LIMITED Safe allowed delegatecall");
         (bool calldataMove,) = address(safe).call(
-            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(0), bytes("0xdead"), uint8(0))
+            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(0), bytes("0xdead"), uint8(0), uint256(0))
         );
         require(!calldataMove, "LIMITED Safe allowed calldata");
+        (bool refund,) = address(safe).call(
+            abi.encodeWithSelector(safe.exec.selector, guard, address(0x1111), uint256(0), bytes(""), uint8(0), uint256(1))
+        );
+        require(!refund, "LIMITED Safe allowed native gas refund");
+    }
+
+    function testModulePathIsFrozenAndLimitedLikeExecTransaction() public {
+        MockSafe safe = new MockSafe();
+        AirSafeGuard guard = new AirSafeGuard(address(safe), 0.01 ether);
+        (AirResponderCore c, MockVerifier v) = _bind(guard);
+        bytes32 id = keccak256("safe-module");
+        _incidentTx(v, c, id, 1, 75, 132);
+        c.processIncident(CHAIN_KEY, 132, _inc(), _cont(), bytes(""));
+        safe.execModule(guard, address(0x1111), 0.01 ether, bytes(""), 0);
+        (bool over,) = address(safe).call(
+            abi.encodeWithSelector(safe.execModule.selector, guard, address(0x1111), uint256(1), bytes(""), uint8(0))
+        );
+        require(!over, "LIMITED module exceeded native budget");
+        _incidentTx(v, c, id, 2, 76, 133);
+        c.processIncident(CHAIN_KEY, 133, _inc(), _cont(), bytes(""));
+        (bool frozenMod,) = address(safe).call(
+            abi.encodeWithSelector(safe.execModule.selector, guard, address(0x1111), uint256(0), bytes(""), uint8(0))
+        );
+        require(!frozenMod, "FROZEN module still executed");
+    }
+
+    function testUnsuccessfulSafeExecutionDoesNotKeepLimitedSpend() public {
+        MockSafe safe = new MockSafe();
+        AirSafeGuard guard = new AirSafeGuard(address(safe), 1 ether);
+        (AirResponderCore c, MockVerifier v) = _bind(guard);
+        bytes32 id = keccak256("safe-fail");
+        _incidentTx(v, c, id, 1, 77, 134);
+        c.processIncident(CHAIN_KEY, 134, _inc(), _cont(), bytes(""));
+        (bool failed,) = address(safe).call(abi.encodeWithSelector(safe.execFailed.selector, guard, address(0x1111), uint256(0.5 ether)));
+        require(!failed, "failed inner execution did not revert the guard");
+        require(guard.limitedSpent() == 0, "failed execution consumed LIMITED budget");
+        safe.exec(guard, address(0x1111), 0.5 ether, bytes(""), 0, 0);
+        require(guard.limitedSpent() == 0.5 ether, "successful spend was not counted");
     }
 
     function testPauseTargetIsASecondContainmentSinkForTheSameResponderShape() public {

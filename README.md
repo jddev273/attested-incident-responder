@@ -24,7 +24,7 @@ A reserve can deteriorate on one chain while treasury spend authority on another
 2. **Proof + freshness** — Creditcoin verifies the finalized source transaction and checks it against attested source height. A stale or future *transaction* is rejected without burning the incident. While risk remains, the source can emit a fresh observation of that same incident so a current proof can still land.
 3. **Policy floor** — Severity maps to a minimum vault mode: `NORMAL`, `LIMITED` (cumulative incident budget), or `FROZEN` (no outbound value).
 4. **Bounded strengthening** — For a warning, an authenticated equal-or-stricter recommendation may raise containment. Effective mode is `max(deterministic floor, bounded recommendation)`.
-5. **Creditcoin enforcement** — `SentryVault` is the spend path. There is no owner withdrawal that bypasses mode checks.
+5. **Enforcement adapters** — `SentryVault`, a Safe Guard (transaction Guard **and** module Guard), or `PauseTarget`. The responder does not care which sink it drives.
 6. **Verified recovery** — Only a later proved source resolution can relax containment. The model cannot clear it.
 
 ```text
@@ -61,13 +61,13 @@ Same payment class on Creditcoin CC3:
 | `src/PauseTarget.sol` | Second containment target (pause / quota) |
 | `agent/air_recommender.py` | Bounded recommender (tighten only) |
 | `agent/air_signer.py` | EIP-712 signer for the 224-byte recommendation payload |
-| `scripts/judge-demo.sh` | One-command local tests plus public receipt check |
+| `scripts/judge-demo.sh` | One-command local tests plus public receipt check (`./judge-demo.sh` at repo root) |
 | `test/` | Containment, Safe Guard, strengthening, and recovery invariants |
 | `scripts/live_chaininfo.py` | Live Creditcoin ChainInfo read |
 | `vendor/asc-contracts-0.2.1/` | Gluwa ASC proof verifier used at compile time |
 
 ```bash
-./scripts/judge-demo.sh
+./judge-demo.sh
 ```
 
 Or separately:

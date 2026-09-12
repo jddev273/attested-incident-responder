@@ -190,6 +190,18 @@ contract AirResponderTest {
         require(!fallbackUsed && uint8(applied) == 2 && target_.mode() == 2, "trusted strengthening was not applied");
     }
 
+    function testStrengthenIncidentAfterUnsignedWarning() public {
+        (AirResponderCore c, MockVerifier verifier, MockTarget target_) = _deploy();
+        bytes32 id = keccak256("late-strengthen");
+        _incidentTx(verifier, c, id, 1, 13, SOURCE_CHAIN, EMITTER, 1, c.policyHash());
+        (, AirResponderCore.Mode floorMode, bool fallbackUsed) =
+            c.processIncident(CHAIN_KEY, 126, _inc(), _cont(), bytes(""));
+        require(fallbackUsed && uint8(floorMode) == 1 && target_.mode() == 1, "unsigned warning did not apply LIMITED");
+        AirResponderCore.Mode next = c.strengthenIncident(id, _recommend(c, id, 1, 126, 13, AirResponderCore.Mode.FROZEN));
+        require(uint8(next) == 2 && target_.mode() == 2, "strengthenIncident did not freeze after unsigned proof");
+        require(c.limitedCount() == 0 && c.frozenCount() == 1, "strengthenIncident double-counted modes");
+    }
+
     function testExpiredSignedRecommendationCannotEscalateWarning() public {
         (AirResponderCore c, MockVerifier verifier, MockTarget target_) = _deploy();
         bytes32 id = keccak256("expired-recommendation");

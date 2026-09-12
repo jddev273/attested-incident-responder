@@ -3,8 +3,8 @@ pragma solidity ^0.8.28;
 
 import {IAirContainmentTarget} from "./AttestedIncidentResponder.sol";
 
-/// @notice Safe Guard interface (safe-smart-account GuardManager).
-interface IAirSafeGuard {
+/// @notice Safe transaction Guard (execTransaction).
+interface IAirTransactionGuard {
     function checkTransaction(
         address to,
         uint256 value,
@@ -22,10 +22,26 @@ interface IAirSafeGuard {
     function checkAfterExecution(bytes32 txHash, bool success) external;
 }
 
-/// @notice AIR containment target that restricts an existing Safe instead of replacing it.
-/// NORMAL: no extra restriction. LIMITED: native Call value against one incident budget.
-/// FROZEN: every Safe transaction reverts. DelegateCall is rejected once containment is active.
-contract AirSafeGuard is IAirContainmentTarget, IAirSafeGuard {
+/// @notice Safe module Guard (execTransactionFromModule). Installing only the transaction Guard
+/// leaves module transfers unconstrained.
+interface IAirModuleGuard {
+    function checkModuleTransaction(
+        address to,
+        uint256 value,
+        bytes memory data,
+        uint8 operation,
+        address module
+    ) external returns (bytes32 moduleTxHash);
+
+    function checkAfterModuleExecution(bytes32 txHash, bool success) external;
+}
+
+/// @notice AIR containment target for an existing Safe. Install this address as both the
+/// transaction Guard and the module Guard. NORMAL is unrestricted. LIMITED caps native Call
+/// value and requires gasPrice == 0 so ETH refunds cannot bypass the budget. FROZEN rejects
+/// every transaction and module execution. Failed inner execution reverts so LIMITED accounting
+/// cannot stick without a successful spend.
+contract AirSafeGuard is IAirContainmentTarget, IAirTransactionGuard, IAirModuleGuard {
     enum Mode {
         NORMAL,
         LIMITED,
@@ -51,6 +67,8 @@ contract AirSafeGuard is IAirContainmentTarget, IAirSafeGuard {
     error GuardDelegateCall();
     error GuardCalldataNotAllowed();
     error GuardRefundToken();
+    error GuardGasRefund();
+    error GuardExecutionFailed();
     error LimitedBudgetExceeded();
 
     event ResponderBound(address indexed responder);
@@ -89,29 +107,51 @@ contract AirSafeGuard is IAirContainmentTarget, IAirSafeGuard {
         uint8 operation,
         uint256,
         uint256,
-        uint256,
+        uint256 gasPrice,
         address gasToken,
         address payable,
         bytes memory,
         address
     ) external {
         if (msg.sender != safe) revert NotSafe();
-        Mode current = mode;
-        if (current == Mode.NORMAL) return;
-        if (current == Mode.FROZEN) revert GuardFrozen();
-        if (operation != 0) revert GuardDelegateCall();
-        if (data.length != 0) revert GuardCalldataNotAllowed();
+        if (mode == Mode.NORMAL) return;
+        if (gasPrice != 0) revert GuardGasRefund();
         if (gasToken != address(0)) revert GuardRefundToken();
-        uint256 nextSpent = limitedSpent + value;
-        if (nextSpent > limitedBudget) revert LimitedBudgetExceeded();
-        limitedSpent = nextSpent;
+        _enforce(value, data, operation);
     }
 
-    function checkAfterExecution(bytes32, bool) external {
+    function checkAfterExecution(bytes32, bool success) external {
         if (msg.sender != safe) revert NotSafe();
+        if (!success) revert GuardExecutionFailed();
+    }
+
+    function checkModuleTransaction(address, uint256 value, bytes memory data, uint8 operation, address)
+        external
+        returns (bytes32 moduleTxHash)
+    {
+        if (msg.sender != safe) revert NotSafe();
+        if (mode != Mode.NORMAL) {
+            _enforce(value, data, operation);
+        }
+        moduleTxHash = keccak256(abi.encode(value, keccak256(data), operation, limitedSpent, mode));
+    }
+
+    function checkAfterModuleExecution(bytes32, bool success) external {
+        if (msg.sender != safe) revert NotSafe();
+        if (!success) revert GuardExecutionFailed();
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == 0x01ffc9a7 || interfaceId == 0xe6d7a83a;
+        return interfaceId == 0x01ffc9a7 || interfaceId == 0xe6d7a83a
+            || interfaceId == type(IAirModuleGuard).interfaceId;
+    }
+
+    function _enforce(uint256 value, bytes memory data, uint8 operation) internal {
+        if (mode == Mode.FROZEN) revert GuardFrozen();
+        if (operation != 0) revert GuardDelegateCall();
+        if (data.length != 0) revert GuardCalldataNotAllowed();
+        uint256 nextSpent = limitedSpent + value;
+        if (nextSpent > limitedBudget) revert LimitedBudgetExceeded();
+        limitedSpent = nextSpent;
     }
 }
