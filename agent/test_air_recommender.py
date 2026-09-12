@@ -266,6 +266,28 @@ class AirRecommenderTest(unittest.TestCase):
         self.assertEqual(captured["body"]["max_tokens"], MAX_LEGACY_COMPLETION_TOKENS)
         self.assertNotIn("max_completion_tokens", captured["body"])
 
+    def test_gemini_chat_models_omit_temperature_and_openai_reasoning_effort(self):
+        captured = {}
+        content = model_json()
+        payload = json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]}).encode()
+
+        def fake_urlopen(request, timeout):
+            captured["body"] = json.loads(request.data.decode())
+            return FakeResponse(payload)
+
+        client = OpenAICompatibleClient(
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            "secret",
+            "gemini-3.8-flash",
+            timeout_seconds=3.5,
+            urlopen=fake_urlopen,
+        )
+        self.assertEqual(client.complete(evidence()), content)
+        self.assertNotIn("temperature", captured["body"])
+        self.assertNotIn("max_tokens", captured["body"])
+        self.assertNotIn("reasoning_effort", captured["body"])
+        self.assertEqual(captured["body"]["max_completion_tokens"], MAX_GPT5_COMPLETION_TOKENS)
+
     def test_openai_compatible_client_rejects_unbounded_timeout_values(self):
         for timeout in (-1.0, 0.0, float("inf"), float("nan"), MAX_TIMEOUT_SECONDS + 0.001):
             with self.subTest(timeout=timeout), self.assertRaises(ValueError):

@@ -212,11 +212,16 @@ class OpenAICompatibleClient:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.reasoning_effort = reasoning_effort
-        default_tokens = MAX_GPT5_COMPLETION_TOKENS if model.lower().startswith("gpt-5") else MAX_LEGACY_COMPLETION_TOKENS
+        default_tokens = MAX_GPT5_COMPLETION_TOKENS if self._modern_chat_model(model) else MAX_LEGACY_COMPLETION_TOKENS
         self.max_completion_tokens = default_tokens if max_completion_tokens is None else max_completion_tokens
         if self.max_completion_tokens <= 0 or self.max_completion_tokens > 32_768:
             raise ValueError("max_completion_tokens is out of range")
         self._urlopen = urlopen
+
+    @staticmethod
+    def _modern_chat_model(model: str) -> bool:
+        name = model.lower()
+        return name.startswith("gpt-5") or name.startswith("gemini-")
 
     def _chat_body(self, system: str, user_payload: dict[str, Any]) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -227,10 +232,11 @@ class OpenAICompatibleClient:
                 {"role": "user", "content": json.dumps(user_payload, separators=(",", ":"))},
             ],
         }
-        # GPT-5 chat models reject temperature and max_tokens; older compatible models still use them.
-        if self.model.lower().startswith("gpt-5"):
+        # GPT-5 and Gemini 3.x reject temperature / max_tokens.
+        if self._modern_chat_model(self.model):
             body["max_completion_tokens"] = self.max_completion_tokens
-            body["reasoning_effort"] = self.reasoning_effort
+            if self.model.lower().startswith("gpt-5"):
+                body["reasoning_effort"] = self.reasoning_effort
         else:
             body["temperature"] = 0
             body["max_tokens"] = self.max_completion_tokens
