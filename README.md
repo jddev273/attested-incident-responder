@@ -77,3 +77,5 @@ forge test -q
 python3 -m unittest discover -s agent -p 'test_*.py' -q
 python3 scripts/live_chaininfo.py
 ```
+
+AIR is MIT. Vendored Gluwa ASC contracts remain MIT under Gluwa Inc.
