@@ -136,6 +136,10 @@ class VerifiedIncidentEvidence:
     source_contract: str
     source_block: int
     tx_index: int
+    observation: str = "raise"
+    protected_balance: int | None = None
+    warning_floor: int | None = None
+    critical_floor: int | None = None
 
     def validate(self) -> None:
         _bytes32(self.evidence_id, "evidence_id")
@@ -146,6 +150,8 @@ class VerifiedIncidentEvidence:
             raise ValueError("source identity must be non-empty")
         if self.source_block < 0 or self.tx_index < 0:
             raise ValueError("source position must be non-negative")
+        if self.observation not in ("raise", "refresh", "escalate"):
+            raise ValueError("observation must be raise, refresh, or escalate")
 
     @property
     def allowed_modes(self) -> tuple[str, ...]:
@@ -161,6 +167,7 @@ class RecommendationIntent:
     evidence_id: str
     fallback: bool
     rationale_hash: str
+    cause: str = "ok"
 
 
 class OpenAICompatibleClient:
@@ -184,37 +191,54 @@ class OpenAICompatibleClient:
         self.timeout_seconds = timeout_seconds
         self._urlopen = urlopen
 
+    def _chat_body(self, system: str, user_payload: dict[str, Any]) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user_payload, separators=(",", ":"))},
+            ],
+        }
+        # GPT-5 chat models reject temperature and max_tokens; older compatible models still use them.
+        if self.model.lower().startswith("gpt-5"):
+            body["max_completion_tokens"] = MAX_COMPLETION_TOKENS
+        else:
+            body["temperature"] = 0
+            body["max_tokens"] = MAX_COMPLETION_TOKENS
+        return body
+
     def complete(self, evidence: VerifiedIncidentEvidence) -> str:
         evidence.validate()
         system = (
             "You are AIR's bounded incident-response classifier. Return ONLY a JSON object with exactly "
             "three keys: evidence_id, mode, reason. Echo evidence_id exactly. mode must be one of the "
             "allowed_modes supplied. reason must be non-empty, <=280 characters, and explain the risk. "
+            "CRITICAL must be FROZEN. WARNING may be LIMITED, or FROZEN when remaining buffer to the "
+            "critical floor is small, the observation is escalate/refresh, or distress is already ongoing. "
             "You have NO authority to name beneficiaries, contracts, calldata, limits, policies, or recovery actions."
         )
         user_payload = {
             "evidence_id": evidence.evidence_id,
             "incident_id": evidence.incident_id,
             "severity": evidence.severity,
+            "policy_floor": source_floor(evidence),
+            "observation": evidence.observation,
             "source_chain_key": evidence.source_chain_key,
             "source_contract": evidence.source_contract,
             "source_block": evidence.source_block,
             "tx_index": evidence.tx_index,
             "allowed_modes": list(evidence.allowed_modes),
         }
-        body = json.dumps(
-            {
-                "model": self.model,
-                "temperature": 0,
-                "max_tokens": MAX_COMPLETION_TOKENS,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": json.dumps(user_payload, separators=(",", ":"))},
-                ],
-            },
-            separators=(",", ":"),
-        ).encode()
+        if evidence.protected_balance is not None:
+            user_payload["protected_balance"] = evidence.protected_balance
+        if evidence.warning_floor is not None:
+            user_payload["warning_floor"] = evidence.warning_floor
+        if evidence.critical_floor is not None:
+            user_payload["critical_floor"] = evidence.critical_floor
+            if evidence.protected_balance is not None:
+                user_payload["buffer_to_critical"] = evidence.protected_balance - evidence.critical_floor
+        body = json.dumps(self._chat_body(system, user_payload), separators=(",", ":")).encode()
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -235,13 +259,14 @@ def source_floor(evidence: VerifiedIncidentEvidence) -> str:
     return "LIMITED" if evidence.severity == 1 else "FROZEN"
 
 
-def _fallback(evidence: VerifiedIncidentEvidence, reason: str) -> RecommendationIntent:
+def _fallback(evidence: VerifiedIncidentEvidence, reason: str, cause: str) -> RecommendationIntent:
     return RecommendationIntent(
         mode=source_floor(evidence),
         reason=reason,
         evidence_id=evidence.evidence_id,
         fallback=True,
         rationale_hash="0x" + "00" * 32,
+        cause=cause,
     )
 
 
@@ -251,17 +276,17 @@ def parse_model_output(evidence: VerifiedIncidentEvidence, raw_model_text: str) 
     try:
         obj = json.loads(raw_model_text)
     except (TypeError, json.JSONDecodeError):
-        return _fallback(evidence, fallback_reason)
+        return _fallback(evidence, fallback_reason, "invalid_output")
     if not isinstance(obj, dict) or set(obj) != {"evidence_id", "mode", "reason"}:
-        return _fallback(evidence, fallback_reason)
+        return _fallback(evidence, fallback_reason, "invalid_output")
     if obj["evidence_id"] != evidence.evidence_id:
-        return _fallback(evidence, "model evidence binding mismatch; contract applies objective source-severity floor")
+        return _fallback(evidence, "model evidence binding mismatch; contract applies objective source-severity floor", "invalid_output")
     mode = obj["mode"]
     reason = obj["reason"]
     if mode not in evidence.allowed_modes:
-        return _fallback(evidence, "model mode outside deterministic policy envelope; contract applies objective source-severity floor")
+        return _fallback(evidence, "model mode outside deterministic policy envelope; contract applies objective source-severity floor", "invalid_output")
     if not isinstance(reason, str) or not reason.strip() or len(reason) > MAX_REASON_CHARS:
-        return _fallback(evidence, fallback_reason)
+        return _fallback(evidence, fallback_reason, "invalid_output")
     reason = reason.strip()
     rationale = keccak256(reason.encode("utf-8"))
     return RecommendationIntent(
@@ -363,8 +388,18 @@ def recommend(evidence: VerifiedIncidentEvidence, client: Any) -> Recommendation
     try:
         raw = client.complete(evidence)
         return parse_model_output(evidence, raw)
-    except Exception as exc:  # network/provider/parser failure must never block containment
-        return _fallback(evidence, f"model adapter failure ({type(exc).__name__}); contract applies objective source-severity floor")
+    except TimeoutError as exc:
+        return _fallback(
+            evidence,
+            f"model adapter timeout ({type(exc).__name__}); contract applies objective source-severity floor",
+            "provider_timeout",
+        )
+    except Exception as exc:  # network/provider failure must never block containment
+        return _fallback(
+            evidence,
+            f"model adapter failure ({type(exc).__name__}); contract applies objective source-severity floor",
+            "provider_error",
+        )
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -376,6 +411,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--source-contract", required=True)
     parser.add_argument("--source-block", required=True, type=int)
     parser.add_argument("--tx-index", required=True, type=int)
+    parser.add_argument("--observation", default="raise", choices=("raise", "refresh", "escalate"))
+    parser.add_argument("--protected-balance", type=int, default=None)
+    parser.add_argument("--warning-floor", type=int, default=None)
+    parser.add_argument("--critical-floor", type=int, default=None)
     return parser.parse_args(argv)
 
 
@@ -389,6 +428,10 @@ def main(argv: list[str] | None = None) -> int:
         source_contract=args.source_contract,
         source_block=args.source_block,
         tx_index=args.tx_index,
+        observation=args.observation,
+        protected_balance=args.protected_balance,
+        warning_floor=args.warning_floor,
+        critical_floor=args.critical_floor,
     )
     client = OpenAICompatibleClient(
         base_url=os.environ.get("AIR_MODEL_BASE_URL", "https://api.openai.com/v1"),

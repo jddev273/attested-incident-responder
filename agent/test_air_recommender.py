@@ -140,6 +140,7 @@ class AirRecommenderTest(unittest.TestCase):
         fallback = parse_model_output(evidence(1), "not-json")
         self.assertTrue(fallback.fallback)
         self.assertEqual(fallback.mode, "LIMITED")
+        self.assertEqual(fallback.cause, "invalid_output")
         with self.assertRaisesRegex(ValueError, "must not be signed"):
             build_signing_request(fallback, POLICY_HASH, 102031, RESPONDER, VALID_UNTIL)
         with self.assertRaisesRegex(ValueError, "must not be encoded"):
@@ -203,6 +204,7 @@ class AirRecommenderTest(unittest.TestCase):
         result = recommend(evidence(), FakeClient(exc=TimeoutError("slow model")))
         self.assertTrue(result.fallback)
         self.assertEqual(result.mode, "LIMITED")
+        self.assertEqual(result.cause, "provider_timeout")
 
     def test_openai_compatible_client_sends_only_bounded_evidence_and_schema(self):
         captured = {}
@@ -220,25 +222,45 @@ class AirRecommenderTest(unittest.TestCase):
         client = OpenAICompatibleClient(
             "https://model.invalid/v1",
             "secret",
-            "bounded-model",
+            "gpt-5-mini",
             timeout_seconds=3.5,
             urlopen=fake_urlopen,
         )
         self.assertEqual(client.complete(evidence()), content)
         self.assertEqual(captured["url"], "https://model.invalid/v1/chat/completions")
         self.assertEqual(captured["timeout"], 3.5)
-        self.assertEqual(captured["body"]["temperature"], 0)
-        self.assertEqual(captured["body"]["max_tokens"], MAX_COMPLETION_TOKENS)
+        self.assertNotIn("temperature", captured["body"])
+        self.assertNotIn("max_tokens", captured["body"])
+        self.assertEqual(captured["body"]["max_completion_tokens"], MAX_COMPLETION_TOKENS)
         self.assertEqual(captured["body"]["response_format"], {"type": "json_object"})
         self.assertEqual(response.read_sizes, [MAX_RESPONSE_BYTES + 1])
         user = json.loads(captured["body"]["messages"][1]["content"])
-        self.assertEqual(set(user), {
-            "evidence_id", "incident_id", "severity", "source_chain_key", "source_contract",
-            "source_block", "tx_index", "allowed_modes",
-        })
+        self.assertEqual(user["policy_floor"], "LIMITED")
+        self.assertEqual(user["observation"], "raise")
         self.assertNotIn("beneficiary", user)
         self.assertNotIn("calldata", user)
         self.assertNotIn("limit", user)
+
+    def test_legacy_chat_models_still_send_temperature_zero(self):
+        captured = {}
+        content = model_json()
+        payload = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+
+        def fake_urlopen(request, timeout):
+            captured["body"] = json.loads(request.data.decode())
+            return FakeResponse(payload)
+
+        client = OpenAICompatibleClient(
+            "https://model.invalid/v1",
+            "secret",
+            "bounded-model",
+            timeout_seconds=3.5,
+            urlopen=fake_urlopen,
+        )
+        self.assertEqual(client.complete(evidence()), content)
+        self.assertEqual(captured["body"]["temperature"], 0)
+        self.assertEqual(captured["body"]["max_tokens"], MAX_COMPLETION_TOKENS)
+        self.assertNotIn("max_completion_tokens", captured["body"])
 
     def test_openai_compatible_client_rejects_unbounded_timeout_values(self):
         for timeout in (-1.0, 0.0, float("inf"), float("nan"), MAX_TIMEOUT_SECONDS + 0.001):

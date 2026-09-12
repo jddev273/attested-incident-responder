@@ -61,7 +61,8 @@ Same payment class on Creditcoin CC3:
 | `src/PauseTarget.sol` | Second containment target (pause / quota) |
 | `agent/air_recommender.py` | Bounded recommender (tighten only) |
 | `agent/air_signer.py` | EIP-712 signer for the 224-byte recommendation payload |
-| `scripts/judge-demo.sh` | One-command local tests plus public receipt check (`./judge-demo.sh` at repo root) |
+| `scripts/air_scenarios.py` | Recorded-model recommender/signer scenarios |
+| `scripts/judge-demo.sh` | One-command local tests, scenarios, and public receipt check (`./judge-demo.sh`) |
 | `test/` | Containment, Safe Guard, strengthening, and recovery invariants |
 | `scripts/live_chaininfo.py` | Live Creditcoin ChainInfo read |
 | `vendor/asc-contracts-0.2.1/` | Gluwa ASC proof verifier used at compile time |

@@ -102,7 +102,13 @@ def recommendation_digest(
     responder: str,
 ) -> bytes:
     request = build_signing_request(
-        RecommendationIntent(mode=mode, reason="signed", evidence_id=fingerprint, fallback=False, rationale_hash=rationale_hash),
+        RecommendationIntent(
+            mode=mode,
+            reason="signed",
+            evidence_id=fingerprint,
+            fallback=False,
+            rationale_hash=rationale_hash,
+        ),
         policy_hash,
         chain_id,
         responder,

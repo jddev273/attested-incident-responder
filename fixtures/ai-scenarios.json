@@ -1,0 +1,54 @@
+[
+  {
+    "name": "WARNING may escalate to FROZEN from recorded output",
+    "recorded_source": "recorded_model_output",
+    "evidence_id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "incident_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "severity": 1,
+    "observation": "escalate",
+    "protected_balance": 110,
+    "warning_floor": 200,
+    "critical_floor": 100,
+    "recorded_model_output": "{\"evidence_id\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"mode\":\"FROZEN\",\"reason\":\"Buffer to critical is thin; tighten containment.\"}",
+    "expect_mode": "FROZEN",
+    "expect_fallback": false,
+    "expect_cause": "ok",
+    "expect_signable": true
+  },
+  {
+    "name": "invalid recorded output falls back to WARNING floor",
+    "recorded_source": "recorded_model_output",
+    "evidence_id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "incident_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "severity": 1,
+    "recorded_model_output": "not-json",
+    "expect_mode": "LIMITED",
+    "expect_fallback": true,
+    "expect_cause": "invalid_output",
+    "expect_signable": false
+  },
+  {
+    "name": "CRITICAL cannot be weakened by recorded LIMITED",
+    "recorded_source": "recorded_model_output",
+    "evidence_id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "incident_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "severity": 2,
+    "recorded_model_output": "{\"evidence_id\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"mode\":\"LIMITED\",\"reason\":\"please unfreeze\"}",
+    "expect_mode": "FROZEN",
+    "expect_fallback": true,
+    "expect_cause": "invalid_output",
+    "expect_signable": false
+  },
+  {
+    "name": "provider timeout does not block containment",
+    "recorded_source": "provider_timeout",
+    "evidence_id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "incident_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "severity": 1,
+    "recorded_model_output": "",
+    "expect_mode": "LIMITED",
+    "expect_fallback": true,
+    "expect_cause": "provider_timeout",
+    "expect_signable": false
+  }
+]

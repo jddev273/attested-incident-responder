@@ -2,16 +2,29 @@
   {
     "name": "baseline payment succeeds",
     "tx": "0xba66fbf831af4000e112ea2332939d37062728d259a6daf7348e930fd275b811",
-    "status": "1"
+    "status": "ok",
+    "method": "0xef0bba2c",
+    "to": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
+    "from": "0x748E51C193A756c713226aeCF874148863515272",
+    "min_block": 5437585
   },
   {
     "name": "frozen payment rejected",
     "tx": "0x752f9297ecd39f07235d67baad69375796a53ae158f8d2b90bc11af8a63f548c",
-    "status": "0"
+    "status": "error",
+    "method": "0xef0bba2c",
+    "to": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
+    "from": "0x748E51C193A756c713226aeCF874148863515272",
+    "revert_selector": "0xd5d5c0c9",
+    "min_block": 5438040
   },
   {
     "name": "recovered payment succeeds",
     "tx": "0x3e7cc159a42483a0b1545f41d3bf0fd00c2d08f0e3e128190ee89ce153a2b046",
-    "status": "1"
+    "status": "ok",
+    "method": "0xef0bba2c",
+    "to": "0x1EF3B69DaF030b41449c5E1a31720fb28A8767Cc",
+    "from": "0x748E51C193A756c713226aeCF874148863515272",
+    "min_block": 5438072
   }
 ]
