@@ -8,6 +8,8 @@ AIR turns verified reserve distress on Ethereum into an enforceable spending res
 
 Product page: [https://jddev273.github.io/attested-incident-responder/](https://jddev273.github.io/attested-incident-responder/)
 
+Deck: [AIR_BUIDL_CTC_2026.pdf](https://raw.githubusercontent.com/jddev273/attested-incident-responder/main/AIR_BUIDL_CTC_2026.pdf)
+
 ## Why it exists
 
 A reserve can deteriorate on one chain while treasury spend authority on another stays wide open. Most “AI incident response” stops at a dashboard, a chat message, or a model instruction. AIR closes that gap in the money path itself.
