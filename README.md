@@ -8,7 +8,7 @@ AIR turns verified reserve distress on Ethereum into an enforceable spending res
 
 Product page: [https://jddev273.github.io/attested-incident-responder/](https://jddev273.github.io/attested-incident-responder/)
 
-Deck: [AIR_BUIDL_CTC_2026.pdf](https://raw.githubusercontent.com/jddev273/attested-incident-responder/main/AIR_BUIDL_CTC_2026.pdf)
+Deck: [AIR_BUIDL_CTC_2026.pdf](https://github.com/jddev273/attested-incident-responder/blob/main/AIR_BUIDL_CTC_2026.pdf) · [raw](https://raw.githubusercontent.com/jddev273/attested-incident-responder/main/AIR_BUIDL_CTC_2026.pdf) · [Pages](https://jddev273.github.io/attested-incident-responder/AIR_BUIDL_CTC_2026.pdf)
 
 ## Why it exists
 
